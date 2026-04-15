@@ -111,6 +111,6 @@ val specific = SpecificDeviceSelector(deviceIdentifier = deviceId)
 
 ## Links
 
-- [StreamSession API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.5/com_meta_wearable_dat_camera_streamsession)
-- [StreamConfiguration API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.5/com_meta_wearable_dat_camera_types_streamconfiguration)
+- [StreamSession API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.6/com_meta_wearable_dat_camera_streamsession)
+- [StreamConfiguration API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.6/com_meta_wearable_dat_camera_types_streamconfiguration)
 - [Integration guide](https://wearables.developer.meta.com/docs/build-integration-android)

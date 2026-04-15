@@ -75,7 +75,7 @@ import com.meta.wearable.dat.mockdevice.MockDeviceKit  // MockDeviceKit
 
 ## Links
 
-- [Android API Reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.5)
+- [Android API Reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.6)
 - [Developer Documentation](https://wearables.developer.meta.com/docs/develop/)
 - [GitHub Repository](https://github.com/facebook/meta-wearables-dat-android)
 
@@ -126,7 +126,7 @@ In `libs.versions.toml`:
 
 ```toml
 [versions]
-mwdat = "0.5.0"
+mwdat = "0.6.0"
 
 [libraries]
 mwdat-core = { group = "com.meta.wearable", name = "mwdat-core", version.ref = "mwdat" }
@@ -304,14 +304,14 @@ device.powerOff()
 ### Video streaming
 
 ```kotlin
-val camera = device.getCameraKit()
+val camera = device.services.camera
 camera.setCameraFeed(videoUri)
 ```
 
 ### Photo capture
 
 ```kotlin
-val camera = device.getCameraKit()
+val camera = device.services.camera
 camera.setCapturedImage(imageUri)
 ```
 
@@ -498,8 +498,8 @@ val specific = SpecificDeviceSelector(deviceIdentifier = deviceId)
 
 ## Links
 
-- [StreamSession API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.5/com_meta_wearable_dat_camera_streamsession)
-- [StreamConfiguration API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.5/com_meta_wearable_dat_camera_types_streamconfiguration)
+- [StreamSession API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.6/com_meta_wearable_dat_camera_streamsession)
+- [StreamConfiguration API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.6/com_meta_wearable_dat_camera_types_streamconfiguration)
 - [Integration guide](https://wearables.developer.meta.com/docs/build-integration-android)
 
 ## Session management
@@ -782,7 +782,7 @@ Ensure compatible versions of SDK, Meta AI app, and glasses firmware:
 
 | SDK | Meta AI App | Ray-Ban Meta | Meta Ray-Ban Display |
 |-----|-------------|--------------|----------------------|
-| 0.5.0 | Check [version dependencies](https://wearables.developer.meta.com/docs/version-dependencies) | Check docs | Check docs |
+| 0.6.0 | Check [version dependencies](https://wearables.developer.meta.com/docs/version-dependencies) | Check docs | Check docs |
 | 0.4.0 | V254 | V20 | V21 |
 | 0.3.0 | V249 | V20 | — |
 
@@ -976,7 +976,7 @@ fun setupMockDevice(context: Context) {
     device.don()
 
     // Set up mock camera feed
-    val camera = device.getCameraKit()
+    val camera = device.services.camera
     camera.setCameraFeed(videoUri)
 }
 
@@ -999,3 +999,4 @@ Your DAT app should only depend on:
 - [CameraAccess sample](https://github.com/facebook/meta-wearables-dat-android/tree/main/samples)
 - [Full integration guide](https://wearables.developer.meta.com/docs/build-integration-android)
 - [Developer documentation](https://wearables.developer.meta.com/docs/develop/)
+

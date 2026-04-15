@@ -20,6 +20,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.meta.wearable.dat.mockdevice.MockDeviceKit
 import com.meta.wearable.dat.mockdevice.api.MockRaybanMeta
+import com.meta.wearable.dat.mockdevice.api.camera.CameraFacing
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +38,16 @@ class MockDeviceKitViewModel(application: Application) : AndroidViewModel(applic
 
   private val _uiState = MutableStateFlow(MockDeviceKitUiState())
   val uiState: StateFlow<MockDeviceKitUiState> = _uiState.asStateFlow()
+
+  fun enable() {
+    mockDeviceKit.enable()
+    _uiState.update { it.copy(isEnabled = true) }
+  }
+
+  fun disable() {
+    mockDeviceKit.disable()
+    _uiState.update { it.copy(isEnabled = false, pairedDevices = emptyList()) }
+  }
 
   // Create a simulated Ray-Ban Meta glasses device
   fun pairRaybanMeta() {
@@ -77,37 +88,63 @@ class MockDeviceKitViewModel(application: Application) : AndroidViewModel(applic
   }
 
   fun powerOn(deviceInfo: MockDeviceInfo) {
-    executeMockDeviceOperation(deviceInfo, "Powering on") { device -> device.powerOn() }
+    executeMockDeviceOperation(deviceInfo, "Powering on", deviceInfo.copy(isPoweredOn = true)) {
+        device ->
+      device.powerOn()
+    }
   }
 
   fun powerOff(deviceInfo: MockDeviceInfo) {
-    executeMockDeviceOperation(deviceInfo, "Powering off") { device -> device.powerOff() }
+    executeMockDeviceOperation(
+        deviceInfo,
+        "Powering off",
+        deviceInfo.copy(isPoweredOn = false, isDonned = false, isUnfolded = false),
+    ) { device ->
+      device.powerOff()
+    }
   }
 
   fun don(deviceInfo: MockDeviceInfo) {
-    executeMockDeviceOperation(deviceInfo, "Donning") { device -> device.don() }
+    executeMockDeviceOperation(
+        deviceInfo,
+        "Donning",
+        deviceInfo.copy(isPoweredOn = true, isDonned = true, isUnfolded = true),
+    ) { device ->
+      device.don()
+    }
   }
 
   fun doff(deviceInfo: MockDeviceInfo) {
-    executeMockDeviceOperation(deviceInfo, "Doffing") { device -> device.doff() }
+    executeMockDeviceOperation(deviceInfo, "Doffing", deviceInfo.copy(isDonned = false)) { device ->
+      device.doff()
+    }
   }
 
   fun fold(deviceInfo: MockDeviceInfo) {
-    executeMockDeviceOperation(deviceInfo, "Folding") { device -> device.fold() }
+    executeMockDeviceOperation(
+        deviceInfo,
+        "Folding",
+        deviceInfo.copy(isUnfolded = false, isDonned = false),
+    ) { device ->
+      device.fold()
+    }
   }
 
   fun unfold(deviceInfo: MockDeviceInfo) {
-    executeMockDeviceOperation(deviceInfo, "Unfolding") { device -> device.unfold() }
+    executeMockDeviceOperation(deviceInfo, "Unfolding", deviceInfo.copy(isUnfolded = true)) { device
+      ->
+      device.unfold()
+    }
   }
 
   fun setCameraFeed(deviceInfo: MockDeviceInfo, uri: Uri) {
     viewModelScope.launch {
       try {
         Log.d(TAG, "Setting camera feed from URI: $uri for device: ${deviceInfo.deviceId}")
-        // getCameraKit().setCameraFeed() sets video content for streaming
+        // services.camera.setCameraFeed() sets video content for streaming
         // This video will be streamed when StreamSession.videoStream is active
-        deviceInfo.device.getCameraKit().setCameraFeed(uri)
-        updateDeviceInfo(deviceInfo.copy(hasCameraFeed = true))
+        deviceInfo.device.services.camera.setCameraFeed(uri)
+        updateDeviceInfo(deviceInfo.copy(hasCameraFeed = true, cameraSource = null))
         Log.d(TAG, "Successfully set camera feed for device: ${deviceInfo.deviceId}")
       } catch (e: Exception) {
         Log.e(TAG, "Failed to set camera feed for device: ${deviceInfo.deviceId}", e)
@@ -119,13 +156,31 @@ class MockDeviceKitViewModel(application: Application) : AndroidViewModel(applic
     viewModelScope.launch {
       try {
         Log.d(TAG, "Setting captured image from URI: $uri for device: ${deviceInfo.deviceId}")
-        // getCameraKit().setCapturedImage() sets photo for capture operations
+        // services.camera.setCapturedImage() sets photo for capture operations
         // This image will be returned when StreamSession.capturePhoto() is called
-        deviceInfo.device.getCameraKit().setCapturedImage(uri)
+        deviceInfo.device.services.camera.setCapturedImage(uri)
         updateDeviceInfo(deviceInfo.copy(hasCapturedImage = true))
         Log.d(TAG, "Successfully set captured image for device: ${deviceInfo.deviceId}")
       } catch (e: Exception) {
         Log.e(TAG, "Failed to set captured image for device: ${deviceInfo.deviceId}", e)
+      }
+    }
+  }
+
+  fun setCameraFeed(deviceInfo: MockDeviceInfo, cameraFacing: CameraFacing) {
+    viewModelScope.launch {
+      try {
+        Log.d(
+            TAG,
+            "Setting camera feed to $cameraFacing for device: ${deviceInfo.deviceId}",
+        )
+        // services.camera.setCameraFeed() streams from the phone's camera
+        // This is mutually exclusive with setCameraFeed(Uri)
+        deviceInfo.device.services.camera.setCameraFeed(cameraFacing)
+        updateDeviceInfo(deviceInfo.copy(cameraSource = cameraFacing, hasCameraFeed = false))
+        Log.d(TAG, "Successfully set camera feed for device: ${deviceInfo.deviceId}")
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to set camera feed for device: ${deviceInfo.deviceId}", e)
       }
     }
   }
@@ -147,12 +202,14 @@ class MockDeviceKitViewModel(application: Application) : AndroidViewModel(applic
   private fun executeMockDeviceOperation(
       deviceInfo: MockDeviceInfo,
       operationName: String,
+      updatedDeviceInfo: MockDeviceInfo,
       operation: (MockRaybanMeta) -> Unit,
   ) {
     viewModelScope.launch {
       try {
         Log.d(TAG, "$operationName device with ID: ${deviceInfo.deviceId}")
         operation(deviceInfo.device)
+        updateDeviceInfo(updatedDeviceInfo)
         Log.d(TAG, "Successfully executed $operationName on device: ${deviceInfo.deviceId}")
       } catch (e: Exception) {
         Log.e(TAG, "Failed to $operationName device with ID: ${deviceInfo.deviceId}", e)

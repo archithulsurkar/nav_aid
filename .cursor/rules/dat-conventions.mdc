@@ -75,6 +75,6 @@ import com.meta.wearable.dat.mockdevice.MockDeviceKit  // MockDeviceKit
 
 ## Links
 
-- [Android API Reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.5)
+- [Android API Reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.6)
 - [Developer Documentation](https://wearables.developer.meta.com/docs/develop/)
 - [GitHub Repository](https://github.com/facebook/meta-wearables-dat-android)

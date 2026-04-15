@@ -111,7 +111,7 @@ fun HomeScreen(
       )
       SwitchButton(
           label = stringResource(R.string.register_button_title),
-          enabled = uiState.canRegister,
+          enabled = uiState.canStartRegistration,
           onClick = {
             activity?.let { viewModel.startRegistration(it) }
                 ?: Toast.makeText(context, "Activity not available", Toast.LENGTH_SHORT).show()

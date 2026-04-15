@@ -17,6 +17,7 @@
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.stream
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
@@ -29,15 +30,18 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.meta.wearable.dat.camera.StreamSession
-import com.meta.wearable.dat.camera.startStreamSession
+import com.meta.wearable.dat.camera.Stream
+import com.meta.wearable.dat.camera.addStream
 import com.meta.wearable.dat.camera.types.PhotoData
 import com.meta.wearable.dat.camera.types.StreamConfiguration
+import com.meta.wearable.dat.camera.types.StreamError
 import com.meta.wearable.dat.camera.types.StreamSessionState
 import com.meta.wearable.dat.camera.types.VideoFrame
 import com.meta.wearable.dat.camera.types.VideoQuality
 import com.meta.wearable.dat.core.Wearables
 import com.meta.wearable.dat.core.selectors.DeviceSelector
+import com.meta.wearable.dat.core.session.DeviceSessionState
+import com.meta.wearable.dat.core.session.Session
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.wearables.WearablesViewModel
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -50,24 +54,29 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+@SuppressLint("AutoCloseableUse")
 class StreamViewModel(
     application: Application,
     private val wearablesViewModel: WearablesViewModel,
 ) : AndroidViewModel(application) {
 
   companion object {
-    private const val TAG = "StreamViewModel"
+    private const val TAG = "CameraAccess:StreamViewModel"
     private val INITIAL_STATE = StreamUiState()
+    private val SESSION_TERMINAL_STATES = setOf(StreamSessionState.CLOSED)
   }
 
   private val deviceSelector: DeviceSelector = wearablesViewModel.deviceSelector
-  private var streamSession: StreamSession? = null
+  private var session: Session? = null
 
   private val _uiState = MutableStateFlow(INITIAL_STATE)
   val uiState: StateFlow<StreamUiState> = _uiState.asStateFlow()
 
   private var videoJob: Job? = null
   private var stateJob: Job? = null
+  private var errorJob: Job? = null
+  private var sessionStateJob: Job? = null
+  private var stream: Stream? = null
 
   // Presentation queue for buffering frames after color conversion
   private var presentationQueue: PresentationQueue? = null
@@ -75,6 +84,8 @@ class StreamViewModel(
   fun startStream() {
     videoJob?.cancel()
     stateJob?.cancel()
+    errorJob?.cancel()
+    sessionStateJob?.cancel()
     presentationQueue?.stop()
     presentationQueue = null
 
@@ -94,25 +105,77 @@ class StreamViewModel(
         )
     presentationQueue = queue
     queue.start()
+    if (session == null) {
+      Wearables.createSession(deviceSelector)
+          .onSuccess { createdSession ->
+            session = createdSession
+            session?.start()
+          }
+          .onFailure { error, _ -> Log.e(TAG, "Failed to create session: ${error.description}") }
+      if (session == null) return
+    }
+    startStreamInternal()
+  }
 
-    val streamSession =
-        Wearables.startStreamSession(
-                getApplication(),
-                deviceSelector,
-                StreamConfiguration(videoQuality = VideoQuality.MEDIUM, 24),
-            )
-            .also { streamSession = it }
-    videoJob = viewModelScope.launch { streamSession.videoStream.collect { handleVideoFrame(it) } }
-    stateJob =
+  private fun startStreamInternal() {
+    Log.d(TAG, "startStreamInternal() - collecting session state")
+    sessionStateJob =
         viewModelScope.launch {
-          streamSession.state.collect { currentState ->
-            val prevState = _uiState.value.streamSessionState
-            _uiState.update { it.copy(streamSessionState = currentState) }
+          session?.state?.collect { currentState ->
+            if (currentState == DeviceSessionState.STARTED) {
+              videoJob?.cancel()
+              stateJob?.cancel()
+              errorJob?.cancel()
+              stream?.stop()
+              stream = null
+              session
+                  ?.addStream(StreamConfiguration(videoQuality = VideoQuality.MEDIUM, 24))
+                  ?.onSuccess { addedStream ->
+                    stream = addedStream
+                    videoJob =
+                        viewModelScope.launch {
+                          Log.d(TAG, "Collecting video frames from stream")
+                          stream?.videoStream?.collect { handleVideoFrame(it) }
+                          Log.d(TAG, "Video stream collection ended")
+                        }
+                    stateJob =
+                        viewModelScope.launch {
+                          stream?.state?.collect { currentState ->
+                            val prevState = _uiState.value.streamSessionState
+                            Log.d(TAG, "Stream state changed: $prevState -> $currentState")
+                            _uiState.update { it.copy(streamSessionState = currentState) }
 
-            // navigate back when state transitioned to STOPPED
-            if (currentState != prevState && currentState == StreamSessionState.STOPPED) {
-              stopStream()
-              wearablesViewModel.navigateToDeviceSelection()
+                            val wasActive = prevState !in SESSION_TERMINAL_STATES
+                            val isTerminated = currentState in SESSION_TERMINAL_STATES
+                            if (wasActive && isTerminated) {
+                              Log.d(TAG, "Terminal state reached, navigating back")
+                              stopStream()
+                              wearablesViewModel.navigateToDeviceSelection()
+                            }
+                          }
+                        }
+                    errorJob =
+                        viewModelScope.launch {
+                          stream?.errorStream?.collect { error ->
+                            Log.d(
+                                TAG,
+                                "Stream error received: $error (description: ${error.description})",
+                            )
+                            if (error == StreamError.HINGE_CLOSED) {
+                              Log.d(
+                                  TAG,
+                                  "HINGE_CLOSED detected, stopping stream and navigating back",
+                              )
+                              stopStream()
+                              wearablesViewModel.navigateToDeviceSelection()
+                            }
+                          }
+                        }
+                    stream?.start()
+                  }
+                  ?.onFailure { error, _ ->
+                    Log.e(TAG, "Failed to add stream to session: ${error.description}")
+                  }
             }
           }
         }
@@ -123,11 +186,17 @@ class StreamViewModel(
     videoJob = null
     stateJob?.cancel()
     stateJob = null
+    errorJob?.cancel()
+    errorJob = null
+    sessionStateJob?.cancel()
+    sessionStateJob = null
     presentationQueue?.stop()
     presentationQueue = null
-    streamSession?.close()
-    streamSession = null
     _uiState.update { INITIAL_STATE }
+    stream?.stop()
+    stream = null
+    session?.stop()
+    session = null
   }
 
   fun capturePhoto() {
@@ -141,7 +210,7 @@ class StreamViewModel(
       _uiState.update { it.copy(isCapturing = true) }
 
       viewModelScope.launch {
-        streamSession
+        stream
             ?.capturePhoto()
             ?.onSuccess { photoData ->
               Log.d(TAG, "Photo capture successful")
@@ -310,7 +379,8 @@ class StreamViewModel(
   override fun onCleared() {
     super.onCleared()
     stopStream()
-    stateJob?.cancel()
+    session?.stop()
+    session = null
   }
 
   class Factory(

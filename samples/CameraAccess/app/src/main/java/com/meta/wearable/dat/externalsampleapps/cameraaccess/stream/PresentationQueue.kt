@@ -91,7 +91,8 @@ internal class PresentationQueue(
   // Lock for synchronizing queue access between enqueue and tryPresentNextFrame
   private val queueLock = Any()
 
-  // Presentation thread
+  // Presentation thread — guarded by `threadLock`
+  private val threadLock = Any()
   private var presentationThread: HandlerThread? = null
   private var presentationHandler: Handler? = null
 
@@ -111,7 +112,7 @@ internal class PresentationQueue(
           val presented = tryPresentNextFrame()
           val delay = if (presented) MIN_PRESENT_INTERVAL_MS else 1L
 
-          presentationHandler?.postDelayed(this, delay)
+          synchronized(threadLock) { presentationHandler }?.postDelayed(this, delay)
         }
       }
 
@@ -124,17 +125,19 @@ internal class PresentationQueue(
 
     Log.d(TAG, "Starting with bufferDelayMs=$bufferDelayMs, maxQueueSize=$maxQueueSize")
 
-    presentationThread =
-        HandlerThread(PRESENTATION_THREAD, Process.THREAD_PRIORITY_DISPLAY).apply { start() }
-
-    presentationHandler = presentationThread?.looper?.let { looper -> Handler(looper) }
-
     // Reset timing
     baseWallTimeMs.set(-1L)
     basePresentationTimeUs.set(-1L)
 
-    // Start presentation loop
-    presentationHandler?.post(presentationRunnable)
+    synchronized(threadLock) {
+      presentationThread =
+          HandlerThread(PRESENTATION_THREAD, Process.THREAD_PRIORITY_DISPLAY).apply { start() }
+
+      presentationHandler = presentationThread?.looper?.let { looper -> Handler(looper) }
+
+      // Start presentation loop
+      presentationHandler?.post(presentationRunnable)
+    }
   }
 
   /** Stop the presentation queue and release resources. */
@@ -146,10 +149,12 @@ internal class PresentationQueue(
 
     Log.d(TAG, "Stopping")
 
-    presentationHandler?.removeCallbacksAndMessages(null)
-    presentationThread?.quit()
-    presentationThread = null
-    presentationHandler = null
+    synchronized(threadLock) {
+      presentationHandler?.removeCallbacksAndMessages(null)
+      presentationThread?.quit()
+      presentationThread = null
+      presentationHandler = null
+    }
 
     // Clear remaining frames and recycle their bitmaps
     synchronized(queueLock) {

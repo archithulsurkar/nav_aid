@@ -40,7 +40,7 @@ lifecycleScope.launch {
 
 ## StreamSession state transitions
 
-```
+```text
 STARTING -> STARTED -> STREAMING -> STOPPING -> STOPPED -> CLOSED
 ```
 

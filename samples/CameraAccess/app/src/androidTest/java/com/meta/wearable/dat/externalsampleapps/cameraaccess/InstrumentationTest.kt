@@ -57,11 +57,12 @@ class InstrumentationTest {
   @Before
   fun setup() {
     grantPermissions()
+    MockDeviceKit.getInstance(targetContext).enable()
   }
 
   @After
   fun tearDown() {
-    MockDeviceKit.getInstance(targetContext).reset()
+    MockDeviceKit.getInstance(targetContext).disable()
   }
 
   @Test
@@ -83,6 +84,39 @@ class InstrumentationTest {
   }
 
   @Test
+  fun streamingStopsWhenDeviceFolded() {
+    val startStreamButtonTitle = targetContext.getString(R.string.stream_button_title)
+    val streamContentDescription = targetContext.getString(R.string.live_stream)
+    val nonStreamScreenText = targetContext.getString(R.string.non_stream_screen_description)
+
+    // Pair mock device and provide fake camera feed
+    val mockDeviceKit = MockDeviceKit.getInstance(targetContext)
+    mockDeviceKit.enable()
+    val device = mockDeviceKit.pairRaybanMeta()
+    device.powerOn()
+    device.don()
+    device.unfold()
+    val mockCameraKit = device.services.camera
+    mockCameraKit.setCameraFeed(getFileUri("plant.mp4"))
+
+    // Start streaming and verify stream is displayed
+    composeTestRule.onNodeWithText(startStreamButtonTitle).performClick()
+    composeTestRule.waitUntilExactlyOneExists(
+        hasContentDescription(streamContentDescription),
+        timeoutMillis = 5000,
+    )
+
+    // Fold while streaming
+    device.fold()
+
+    // Verify streaming stops — app should return to non-stream screen
+    composeTestRule.waitUntilExactlyOneExists(
+        hasText(nonStreamScreenText),
+        timeoutMillis = 10000,
+    )
+  }
+
+  @Test
   fun startThenStopStreaming() {
     val startStreamButtonTitle = targetContext.getString(R.string.stream_button_title)
     val streamContentDescription = targetContext.getString(R.string.live_stream)
@@ -94,7 +128,7 @@ class InstrumentationTest {
     val device = mockDeviceKit.pairRaybanMeta()
     device.powerOn()
     device.don()
-    val mockCameraKit = device.getCameraKit()
+    val mockCameraKit = device.services.camera
     mockCameraKit.setCameraFeed(getFileUri("plant.mp4"))
     mockCameraKit.setCapturedImage(getFileUri("plant.png"))
 

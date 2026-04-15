@@ -27,7 +27,6 @@ import com.meta.wearable.dat.core.types.DeviceIdentifier
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.core.types.RegistrationState
-import com.meta.wearable.dat.mockdevice.MockDeviceKit
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,8 +43,8 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
   private val _uiState = MutableStateFlow(WearablesUiState())
   val uiState: StateFlow<WearablesUiState> = _uiState.asStateFlow()
 
-  // AutoDeviceSelector automatically selects the first available wearable device
-  val deviceSelector: DeviceSelector = AutoDeviceSelector()
+  // AutoDeviceSelector automatically selects the first available wearable device.
+  val deviceSelector: DeviceSelector by lazy { AutoDeviceSelector() }
   private var deviceSelectorJob: Job? = null
 
   private var monitoringStarted = false
@@ -60,7 +59,7 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
     // Monitor device selector for active device
     deviceSelectorJob =
         viewModelScope.launch {
-          deviceSelector.activeDevice(Wearables.devices).collect { device ->
+          deviceSelector.activeDeviceFlow().collect { device ->
             _uiState.update { it.copy(hasActiveDevice = device != null) }
           }
         }
@@ -79,10 +78,7 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
     // This automatically updates when devices are discovered, connected, or disconnected
     viewModelScope.launch {
       Wearables.devices.collect { value ->
-        val hasMockDevices = MockDeviceKit.getInstance(getApplication()).pairedDevices.isNotEmpty()
-        _uiState.update {
-          it.copy(devices = value.toList().toImmutableList(), hasMockDevices = hasMockDevices)
-        }
+        _uiState.update { it.copy(devices = value.toList().toImmutableList()) }
         // Monitor device metadata for compatibility issues
         monitorDeviceCompatibility(value)
       }

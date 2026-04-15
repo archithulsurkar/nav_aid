@@ -33,6 +33,8 @@
     <string name="mock_device_kit_title" description="Mock Device Kit Title">Mock Device Kit</string>
     <string name="devices_paired_count" description="Number of devices paired"><xliff:g id="count">%1$d</xliff:g> device(s) paired</string>
     <string name="mock_device_kit_description" description="Mock Device Kit Description">This screen handles simulating devices, mocking capabilities and states</string>
+    <string name="enable_mock_device_kit" description="Enable MockDeviceKit button">Enable MockDeviceKit</string>
+    <string name="disable_mock_device_kit" description="Disable MockDeviceKit button">Disable MockDeviceKit</string>
     <string name="pair_rayban_meta" description="Pair RayBan Meta">Pair RayBan Meta</string>
     <string name="unpair" description="Unpair">Unpair</string>
     <string name="power_on" description="Power On">Power On</string>
@@ -47,6 +49,16 @@
     <string name="select_image" description="Select image">Select image</string>
     <string name="has_captured_image" description="Has captured image">Has captured image</string>
     <string name="no_captured_image" description="No captured image">No captured image</string>
+    <string name="front_camera" description="Front camera">Front Camera</string>
+    <string name="back_camera" description="Back camera">Back Camera</string>
+    <string name="camera_source_active" description="Camera source active">Camera: <xliff:g id="facing">%1$s</xliff:g></string>
+    <string name="no_camera_source" description="No camera source">No camera source</string>
+    <string name="camera_source_label" description="Camera source dropdown label">Camera Source: <xliff:g id="source">%1$s</xliff:g></string>
+    <string name="camera_source_none" description="Camera source none">None</string>
+    <string name="camera_source_video_file" description="Camera source video file">Video File</string>
+    <string name="power" description="Power toggle label">Power</string>
+    <string name="donned" description="Donned toggle label">Donned</string>
+    <string name="unfolded" description="Unfolded toggle label">Unfolded</string>
 
     <!-- Getting Started Sheet -->
     <string name="getting_started_title" description="Getting Started sheet title">Getting started</string>

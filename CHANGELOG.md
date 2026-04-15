@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-04-15
+
+### Added
+
+- Ray-Ban Meta Optics glasses support.
+- [Feature] `MockCameraKit` can use the phone camera (front and back) to simulate streaming with `MockCameraKit.setCameraFeed(CameraFacing)`.
+- [Feature] `StreamConfiguration.compressVideo` property to enable compressed HEVC video streaming, bypassing decoding. The `VideoFrame.isCompressed` property indicates whether the frame data is compressed.
+- [Feature] `MockDeviceKit` now supports configuration to simulate device registration and permissions.
+  - `MockDeviceKitConfig` data class to configure `MockDeviceKit` initialization with `initiallyRegistered` and `initialPermissionsGranted` options.
+  - `MockPermissions` interface with `set` and `setRequestResult` to simulate permission states in tests.
+  - `MockDeviceKitInterface.enable(config)`, `disable`, `isEnabled`, and `permissions` for controlling MockDeviceKit lifecycle and permissions.
+- [API] Session-based device management. Device interactions are now scoped to a `Session` with explicit lifecycle control.
+  - `Wearables.createSession(deviceSelector)`: Creates a `Session` for a given `DeviceSelector`.
+  - `Session` class with `start`, `stop`, state observation via `getState`, and error observation via `getErrors`.
+  - `DeviceSessionState` enum with values `IDLE`, `STARTING`, `PAUSED`, `STOPPING`.
+  - `SessionError` enum with typed error cases.
+  - `Capability` interface for extending sessions with additional features such as camera streaming.
+  - Camera streaming exposed as a `Capability`, as new `Stream` interface. Access to it with `Session.addStream(config)` and `Session.removeStream`.
+- [API] `MockDisplaylessGlassesServices` interface grouping mock services, accessible via `MockDisplaylessGlasses.services`.
+
+### Changed
+
+- [API] Renamed `DeviceMetadata` data class to `Device`, making it consistent with iOS.
+- [API] `DeviceSelector.activeDevice` returns `DeviceIdentifier` directly. `activeDeviceFlow` for the flow-based approach.
+- [API] `MockDeviceKitInterface.reset` replaced with `enable` / `disable` for explicit lifecycle control.
+- Improved the Camera Access App MockDevice UI.
+
+### Fixed
+
+- `MockDevice` better simulates state when a device is powered off or doffed.
+- Runtime crashes when building with R8/minify enabled.
+- `ClassCastException` when `com.meta.wearable.mwdat.APPLICATION_ID` manifest metadata is not parsed as a `String`.
+
+### Removed
+
+- [API] Removed old session model API, including `DeviceSession` class, in favor of the new `Session`.
+- [API] `MockDisplaylessGlasses.getCameraKit` has been removed. The functionality is accessible through `MockDisplaylessGlasses.services`.
+- Third-party library entries from `AndroidManifest.xml`.
+
 ## [0.5.0] - 2026-03-11
 
 
@@ -12,7 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [API] Sealed interface `CaptureError` for photo capture error handling with typed error cases: `DeviceDisconnected`, `NotStreaming`, `CaptureInProgress`, and `CaptureFailed`.
 - [API] Enum `LinkState` representing device connectivity state with values `CONNECTING`, `CONNECTED`, and `DISCONNECTED`. Brings parity with iOS SDK.
-- AI coding agents config files: AGENTS.md, Claude skills, Cursor rules, Copilot instructions.
 
 ### Changed
 

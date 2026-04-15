@@ -27,11 +27,17 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables { useSupportLibrary = true }
+
+    // Meta Wearables Device Access Toolkit Setup
+    // Without Developer Mode, these values need to be set with credentials from the app registered
+    // in Wearables Developer Center
+    manifestPlaceholders["mwdat_application_id"] = ""
+    manifestPlaceholders["mwdat_client_token"] = ""
   }
 
   buildTypes {
     release {
-      isMinifyEnabled = false
+      isMinifyEnabled = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("debug")
     }

@@ -22,7 +22,6 @@ data class WearablesUiState(
     val devices: ImmutableList<DeviceIdentifier> = persistentListOf(),
     val recentError: String? = null,
     val isStreaming: Boolean = false,
-    val hasMockDevices: Boolean = false,
     val isDebugMenuVisible: Boolean = false,
     val isGettingStartedSheetVisible: Boolean = false,
     val hasActiveDevice: Boolean = false,
@@ -30,6 +29,9 @@ data class WearablesUiState(
 ) {
   val isRegistered: Boolean =
       registrationState is RegistrationState.Registered ||
-          registrationState is RegistrationState.Unregistering ||
-          hasMockDevices
+          registrationState is RegistrationState.Unregistering
+
+  val isRegistering: Boolean = registrationState is RegistrationState.Registering
+
+  val canStartRegistration: Boolean = canRegister && !isRegistering
 }

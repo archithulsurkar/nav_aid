@@ -76,7 +76,7 @@ import com.meta.wearable.dat.mockdevice.MockDeviceKit  // MockDeviceKit
 
 ## Links
 
-- [Android API Reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.5)
+- [Android API Reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.6)
 - [Developer Documentation](https://wearables.developer.meta.com/docs/develop/)
 - [GitHub Repository](https://github.com/facebook/meta-wearables-dat-android)
 
@@ -190,8 +190,8 @@ val specific = SpecificDeviceSelector(deviceIdentifier = deviceId)
 
 ## Links
 
-- [StreamSession API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.5/com_meta_wearable_dat_camera_streamsession)
-- [StreamConfiguration API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.5/com_meta_wearable_dat_camera_types_streamconfiguration)
+- [StreamSession API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.6/com_meta_wearable_dat_camera_streamsession)
+- [StreamConfiguration API reference](https://wearables.developer.meta.com/docs/reference/android/dat/0.6/com_meta_wearable_dat_camera_types_streamconfiguration)
 - [Integration guide](https://wearables.developer.meta.com/docs/build-integration-android)
 
 
@@ -266,7 +266,7 @@ Ensure compatible versions of SDK, Meta AI app, and glasses firmware:
 
 | SDK | Meta AI App | Ray-Ban Meta | Meta Ray-Ban Display |
 |-----|-------------|--------------|----------------------|
-| 0.5.0 | Check [version dependencies](https://wearables.developer.meta.com/docs/version-dependencies) | Check docs | Check docs |
+| 0.6.0 | Check [version dependencies](https://wearables.developer.meta.com/docs/version-dependencies) | Check docs | Check docs |
 | 0.4.0 | V254 | V20 | V21 |
 | 0.3.0 | V249 | V20 | — |
 
@@ -354,7 +354,7 @@ In `libs.versions.toml`:
 
 ```toml
 [versions]
-mwdat = "0.5.0"
+mwdat = "0.6.0"
 
 [libraries]
 mwdat-core = { group = "com.meta.wearable", name = "mwdat-core", version.ref = "mwdat" }
@@ -497,10 +497,21 @@ dependencies {
 
 ```kotlin
 import com.meta.wearable.dat.mockdevice.MockDeviceKit
+import com.meta.wearable.dat.mockdevice.api.MockDeviceKitConfig
 
 val mockDeviceKit = MockDeviceKit.getInstance(context)
+
+// Attach fake registration and connectivity (auto-initializes Wearables if needed).
+// By default, Wearables.registrationState transitions to Registered.
+mockDeviceKit.enable()
+
+// Or start in unregistered state to test registration flows:
+// mockDeviceKit.enable(MockDeviceKitConfig(initiallyRegistered = false))
+
 val device = mockDeviceKit.pairRaybanMeta()
 ```
+
+You can check `mockDeviceKit.isEnabled` to query whether the mock environment is active.
 
 ## Simulating device states
 
@@ -521,14 +532,14 @@ device.powerOff()
 ### Video streaming
 
 ```kotlin
-val camera = device.getCameraKit()
+val camera = device.services.camera
 camera.setCameraFeed(videoUri)
 ```
 
 ### Photo capture
 
 ```kotlin
-val camera = device.getCameraKit()
+val camera = device.services.camera
 camera.setCapturedImage(imageUri)
 ```
 
@@ -571,7 +582,7 @@ open class MockDeviceKitTestCase<T : Any>(
 
     @After
     open fun tearDown() {
-        mockDeviceKit.reset()
+        mockDeviceKit.disable()
     }
 
     private fun grantRuntimePermissions() {
@@ -856,18 +867,30 @@ class MainActivity : ComponentActivity() {
 
 ```kotlin
 import com.meta.wearable.dat.mockdevice.MockDeviceKit
+import com.meta.wearable.dat.mockdevice.api.MockDeviceKitConfig
 
 fun setupMockDevice(context: Context) {
     val mockDeviceKit = MockDeviceKit.getInstance(context)
-    val device = mockDeviceKit.pairRaybanMeta()
 
+    // Attach fake implementations (auto-initializes Wearables if needed).
+    // Starts Registered by default. Pass MockDeviceKitConfig(initiallyRegistered = false)
+    // to start in unregistered state for testing registration flows.
+    mockDeviceKit.enable()
+
+    val device = mockDeviceKit.pairRaybanMeta()
     device.powerOn()
     device.unfold()
     device.don()
 
     // Set up mock camera feed
-    val camera = device.getCameraKit()
+    val camera = device.services.camera
     camera.setCameraFeed(videoUri)
+}
+
+fun tearDownMockDevice(context: Context) {
+    val mockDeviceKit = MockDeviceKit.getInstance(context)
+    // Unpairs all mock devices, clears pairedDevices, restores real stack
+    mockDeviceKit.disable()
 }
 ```
 

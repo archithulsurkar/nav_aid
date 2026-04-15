@@ -27,10 +27,21 @@ dependencies {
 
 ```kotlin
 import com.meta.wearable.dat.mockdevice.MockDeviceKit
+import com.meta.wearable.dat.mockdevice.api.MockDeviceKitConfig
 
 val mockDeviceKit = MockDeviceKit.getInstance(context)
+
+// Attach fake registration and connectivity (auto-initializes Wearables if needed).
+// By default, Wearables.registrationState transitions to Registered.
+mockDeviceKit.enable()
+
+// Or start in unregistered state to test registration flows:
+// mockDeviceKit.enable(MockDeviceKitConfig(initiallyRegistered = false))
+
 val device = mockDeviceKit.pairRaybanMeta()
 ```
+
+You can check `mockDeviceKit.isEnabled` to query whether the mock environment is active.
 
 ## Simulating device states
 
@@ -51,14 +62,14 @@ device.powerOff()
 ### Video streaming
 
 ```kotlin
-val camera = device.getCameraKit()
+val camera = device.services.camera
 camera.setCameraFeed(videoUri)
 ```
 
 ### Photo capture
 
 ```kotlin
-val camera = device.getCameraKit()
+val camera = device.services.camera
 camera.setCapturedImage(imageUri)
 ```
 
@@ -101,7 +112,7 @@ open class MockDeviceKitTestCase<T : Any>(
 
     @After
     open fun tearDown() {
-        mockDeviceKit.reset()
+        mockDeviceKit.disable()
     }
 
     private fun grantRuntimePermissions() {

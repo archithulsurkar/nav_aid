@@ -14,7 +14,10 @@ import java.nio.ByteBuffer
 
 internal object YuvToBitmapConverter {
 
-  // Cached buffers to avoid allocations in hot path (single-threaded access from Main thread)
+  // Lock for synchronizing access to cached buffers
+  private val lock = Any()
+
+  // Cached buffers to avoid allocations in hot path — guarded by `lock`
   private var pixels: IntArray = IntArray(0)
   private var yuvBytes: ByteArray = ByteArray(0)
   private var cachedBitmap: Bitmap? = null
@@ -55,55 +58,57 @@ internal object YuvToBitmapConverter {
       return null
     }
 
-    // Resize pixel buffer if needed
-    if (pixels.size < frameSize) {
-      pixels = IntArray(frameSize)
-    }
+    synchronized(lock) {
+      // Resize pixel buffer if needed
+      if (pixels.size < frameSize) {
+        pixels = IntArray(frameSize)
+      }
 
-    // Resize YUV byte array if needed
-    if (yuvBytes.size < expectedSize) {
-      yuvBytes = ByteArray(expectedSize)
-    }
+      // Resize YUV byte array if needed
+      if (yuvBytes.size < expectedSize) {
+        yuvBytes = ByteArray(expectedSize)
+      }
 
-    // Reuse or create bitmap - Bitmap.createBitmap is expensive (~5-10ms)
-    val currentBitmap = cachedBitmap
-    val bitmap =
-        if (
-            currentBitmap != null &&
-                lastWidth == width &&
-                lastHeight == height &&
-                !currentBitmap.isRecycled
-        ) {
-          currentBitmap
-        } else {
-          currentBitmap?.recycle()
-          try {
-            val newBitmap = createBitmap(width, height)
-            cachedBitmap = newBitmap
-            lastWidth = width
-            lastHeight = height
-            newBitmap
-          } catch (@Suppress("EmptyCatchBlock") _: OutOfMemoryError) {
-            return null
+      // Reuse or create bitmap - Bitmap.createBitmap is expensive (~5-10ms)
+      val currentBitmap = cachedBitmap
+      val bitmap =
+          if (
+              currentBitmap != null &&
+                  lastWidth == width &&
+                  lastHeight == height &&
+                  !currentBitmap.isRecycled
+          ) {
+            currentBitmap
+          } else {
+            currentBitmap?.recycle()
+            try {
+              val newBitmap = createBitmap(width, height)
+              cachedBitmap = newBitmap
+              lastWidth = width
+              lastHeight = height
+              newBitmap
+            } catch (@Suppress("EmptyCatchBlock") _: OutOfMemoryError) {
+              return null
+            }
           }
-        }
 
-    // Save buffer position
-    val originalPosition = yuvData.position()
+      // Save buffer position
+      val originalPosition = yuvData.position()
 
-    // Bulk copy - single native memcpy instead of millions of JNI calls
-    yuvData.get(yuvBytes, 0, expectedSize)
+      // Bulk copy - single native memcpy instead of millions of JNI calls
+      yuvData.get(yuvBytes, 0, expectedSize)
 
-    // Restore buffer position
-    yuvData.position(originalPosition)
+      // Restore buffer position
+      yuvData.position(originalPosition)
 
-    // Convert YUV to ARGB
-    convertI420ToArgb(yuvBytes, pixels, width, height)
+      // Convert YUV to ARGB
+      convertI420ToArgb(yuvBytes, pixels, width, height)
 
-    // Copy pixels to bitmap - faster than createBitmap with pixel array
-    bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+      // Copy pixels to bitmap - faster than createBitmap with pixel array
+      bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
 
-    return bitmap
+      return bitmap
+    }
   }
 
   /**

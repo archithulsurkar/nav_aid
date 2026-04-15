@@ -138,18 +138,30 @@ class MainActivity : ComponentActivity() {
 
 ```kotlin
 import com.meta.wearable.dat.mockdevice.MockDeviceKit
+import com.meta.wearable.dat.mockdevice.api.MockDeviceKitConfig
 
 fun setupMockDevice(context: Context) {
     val mockDeviceKit = MockDeviceKit.getInstance(context)
-    val device = mockDeviceKit.pairRaybanMeta()
 
+    // Attach fake implementations (auto-initializes Wearables if needed).
+    // Starts Registered by default. Pass MockDeviceKitConfig(initiallyRegistered = false)
+    // to start in unregistered state for testing registration flows.
+    mockDeviceKit.enable()
+
+    val device = mockDeviceKit.pairRaybanMeta()
     device.powerOn()
     device.unfold()
     device.don()
 
     // Set up mock camera feed
-    val camera = device.getCameraKit()
+    val camera = device.services.camera
     camera.setCameraFeed(videoUri)
+}
+
+fun tearDownMockDevice(context: Context) {
+    val mockDeviceKit = MockDeviceKit.getInstance(context)
+    // Unpairs all mock devices, clears pairedDevices, restores real stack
+    mockDeviceKit.disable()
 }
 ```
 
