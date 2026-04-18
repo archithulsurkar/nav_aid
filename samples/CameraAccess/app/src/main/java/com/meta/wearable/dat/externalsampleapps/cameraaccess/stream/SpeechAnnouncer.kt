@@ -11,6 +11,7 @@ internal class SpeechAnnouncer(context: Context) : TextToSpeech.OnInitListener {
   private var lastSpokenText: String? = null
   private var lastSpokenElapsedMs: Long = 0L
 
+
   override fun onInit(status: Int) {
     val tts = textToSpeech ?: return
     if (status == TextToSpeech.SUCCESS) {
@@ -26,7 +27,7 @@ internal class SpeechAnnouncer(context: Context) : TextToSpeech.OnInitListener {
     }
 
     val now = SystemClock.elapsedRealtime()
-    if (normalized == lastSpokenText && now - lastSpokenElapsedMs < AnalysisConfig.speechCooldownMs) {
+    if (normalized == lastSpokenText && now - lastSpokenElapsedMs < AnalysisConfig.frameIntervalMs) {
       return
     }
 

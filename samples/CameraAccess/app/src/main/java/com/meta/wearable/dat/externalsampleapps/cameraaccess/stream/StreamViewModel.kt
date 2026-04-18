@@ -350,7 +350,7 @@ class StreamViewModel(
 
     analysisSocket =
         AnalysisWebSocketClient(
-            webSocketUrl = AnalysisConfig.webSocketUrl,
+            webSocketUrl = AnalysisConfig.endpointUrl,
             onResult = ::handleAnalysisResult,
             onStatusChanged = { status ->
               status?.let { message -> _uiState.update { it.copy(analysisStatus = message) } }
