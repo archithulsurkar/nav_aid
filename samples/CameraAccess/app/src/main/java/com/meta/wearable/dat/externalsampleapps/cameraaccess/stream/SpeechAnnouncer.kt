@@ -27,7 +27,7 @@ internal class SpeechAnnouncer(context: Context) : TextToSpeech.OnInitListener {
     }
 
     val now = SystemClock.elapsedRealtime()
-    if (normalized == lastSpokenText && now - lastSpokenElapsedMs < AnalysisConfig.frameIntervalMs) {
+    if (now - lastSpokenElapsedMs < 2000L) {
       return
     }
 
