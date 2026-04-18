@@ -16,8 +16,10 @@ package com.meta.wearable.dat.externalsampleapps.cameraaccess.ui
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,12 +27,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -79,29 +83,43 @@ fun StreamScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().padding(all = 24.dp)) {
-      Row(
+      Column(
           modifier =
               Modifier.align(Alignment.BottomCenter)
                   .navigationBarsPadding()
-                  .fillMaxWidth()
-                  .height(56.dp),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-          verticalAlignment = Alignment.CenterVertically,
+                  .fillMaxWidth(),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        SwitchButton(
-            label = stringResource(R.string.stop_stream_button_title),
-            onClick = {
-              streamViewModel.stopStream()
-              wearablesViewModel.navigateToDeviceSelection()
-            },
-            isDestructive = true,
-            modifier = Modifier.weight(1f),
-        )
+        streamUiState.analysisStatus?.let { status ->
+          Text(
+              text = status,
+              color = Color.White,
+              modifier =
+                  Modifier.fillMaxWidth()
+                      .background(Color.Black.copy(alpha = 0.6f))
+                      .padding(horizontal = 12.dp, vertical = 10.dp),
+          )
+        }
 
-        // Photo capture button
-        CaptureButton(
-            onClick = { streamViewModel.capturePhoto() },
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+          SwitchButton(
+              label = stringResource(R.string.stop_stream_button_title),
+              onClick = {
+                streamViewModel.stopStream()
+                wearablesViewModel.navigateToDeviceSelection()
+              },
+              isDestructive = true,
+              modifier = Modifier.weight(1f),
+          )
+
+          CaptureButton(
+              onClick = { streamViewModel.capturePhoto() },
+          )
+        }
       }
     }
   }

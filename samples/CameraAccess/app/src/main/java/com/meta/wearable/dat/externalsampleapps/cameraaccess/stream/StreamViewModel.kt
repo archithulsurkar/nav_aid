@@ -23,6 +23,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
@@ -48,6 +49,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,12 +82,17 @@ class StreamViewModel(
 
   // Presentation queue for buffering frames after color conversion
   private var presentationQueue: PresentationQueue? = null
+  private var analysisUploadJob: Job? = null
+  private var lastAnalysisUploadElapsedMs: Long = 0L
 
   fun startStream() {
     videoJob?.cancel()
     stateJob?.cancel()
     errorJob?.cancel()
     sessionStateJob?.cancel()
+    analysisUploadJob?.cancel()
+    analysisUploadJob = null
+    lastAnalysisUploadElapsedMs = 0L
     presentationQueue?.stop()
     presentationQueue = null
 
@@ -93,8 +100,8 @@ class StreamViewModel(
     // Uses IntArray pooling for efficiency - cheaper than Bitmap.copy()
     val queue =
         PresentationQueue(
-            bufferDelayMs = 100L,
-            maxQueueSize = 15,
+            bufferDelayMs = 20L,
+            maxQueueSize = 3,
             onFrameReady = { frame ->
               // This is called from the presentation thread at regular intervals
               // when a frame's presentation time has arrived
@@ -190,6 +197,9 @@ class StreamViewModel(
     errorJob = null
     sessionStateJob?.cancel()
     sessionStateJob = null
+    analysisUploadJob?.cancel()
+    analysisUploadJob = null
+    lastAnalysisUploadElapsedMs = 0L
     presentationQueue?.stop()
     presentationQueue = null
     _uiState.update { INITIAL_STATE }
@@ -277,9 +287,62 @@ class StreamViewModel(
           bitmap,
           videoFrame.presentationTimeUs,
       )
+      maybeUploadFrameForAnalysis(bitmap, videoFrame)
     } else {
       Log.e(TAG, "Failed to convert YUV to bitmap")
     }
+  }
+
+  private fun maybeUploadFrameForAnalysis(bitmap: Bitmap, videoFrame: VideoFrame) {
+    if (!AnalysisConfig.isEnabled) {
+      return
+    }
+
+    val now = SystemClock.elapsedRealtime()
+    if (now - lastAnalysisUploadElapsedMs < AnalysisConfig.frameIntervalMs) {
+      return
+    }
+
+    if (analysisUploadJob?.isActive == true) {
+      return
+    }
+
+    val frameSnapshot = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
+    lastAnalysisUploadElapsedMs = now
+    analysisUploadJob =
+        viewModelScope.launch(Dispatchers.IO) {
+          try {
+            AnalysisFrameUploader.uploadFrame(
+                endpointUrl = AnalysisConfig.endpointUrl,
+                bitmap = frameSnapshot,
+                presentationTimeUs = videoFrame.presentationTimeUs,
+                width = videoFrame.width,
+                height = videoFrame.height,
+                modelHint = AnalysisConfig.modelHint,
+                sourceName = AnalysisConfig.sourceName,
+            )
+                ?.let(::updateAnalysisStatus)
+          } catch (e: Exception) {
+            Log.e(TAG, "Frame upload failed", e)
+            _uiState.update { it.copy(analysisStatus = "Analysis upload failed") }
+          } finally {
+            frameSnapshot.recycle()
+          }
+        }
+  }
+
+  private fun updateAnalysisStatus(result: AnalysisResult) {
+    val topDetection = result.detections.maxByOrNull { it.confidence }
+    val model = result.model ?: AnalysisConfig.modelHint
+    val summary =
+        when {
+          topDetection != null ->
+              "$model: ${topDetection.label} ${(topDetection.confidence * 100).toInt()}% (${result.detections.size} detections)"
+          result.message != null -> "$model: ${result.message}"
+          else -> "$model: no detections"
+        }
+
+    _uiState.update { it.copy(analysisStatus = summary) }
   }
 
   private fun handlePhotoData(photo: PhotoData) {

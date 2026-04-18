@@ -20,11 +20,11 @@
         <!-- Without Developer Mode, these values need to be set with credentials from the app registered in Wearables Developer Center -->
         <meta-data
             android:name="com.meta.wearable.mwdat.APPLICATION_ID"
-            android:value="${mwdat_application_id}"
+            android:value="1531161225018657"
             />
         <meta-data
             android:name="com.meta.wearable.mwdat.CLIENT_TOKEN"
-            android:value="${mwdat_client_token}"
+            android:value="AR|1531161225018657|ec9ea052b19dfeb53ad1e8c9d0f50f4d"
             />
 
         <activity

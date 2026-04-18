@@ -38,6 +38,40 @@ A sample Android application demonstrating integration with Meta Wearables Devic
    - View and save captured photos
    - Disconnect from the device
 
+## Low-latency analysis frame uploads
+
+This workspace also includes a simple frame uploader for sending sampled frames to a FastAPI server on another machine.
+
+Configure it here:
+
+- `app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/stream/AnalysisConfig.kt`
+
+Set:
+
+- `endpointUrl` to your FastAPI endpoint, for example `http://192.168.1.50:8000/analyze-frame`
+- `frameIntervalMs` to control how often frames are sent
+
+Request format:
+
+- `multipart/form-data`
+- file field: `frame`
+- text fields: `timestamp_us`, `width`, `height`, `model_hint`, `source`
+
+Suggested FastAPI response shape for YOLOv8n:
+
+```json
+{
+  "model": "yolov8n",
+  "latency_ms": 42.5,
+  "detections": [
+    { "label": "chair", "confidence": 0.91, "bbox": [12, 44, 180, 260] }
+  ],
+  "message": "optional human-readable summary"
+}
+```
+
+The stream path was also tuned for lower display latency by reducing the app-side presentation buffer.
+
 ## Troubleshooting
 
 For issues related to the Meta Wearables Device Access Toolkit, please refer to the [developer documentation](https://wearables.developer.meta.com/docs/develop/) or visit our [discussions forum](https://github.com/facebook/meta-wearables-dat-android/discussions)
