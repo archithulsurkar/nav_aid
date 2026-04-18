@@ -38,9 +38,9 @@ A sample Android application demonstrating integration with Meta Wearables Devic
    - View and save captured photos
    - Disconnect from the device
 
-## Low-latency analysis frame uploads
+## Low-latency analysis streaming
 
-This workspace also includes a simple frame uploader for sending sampled frames to a FastAPI server on another machine.
+This workspace also includes a WebSocket client for sending sampled frames to a FastAPI server on another machine and receiving live analysis responses back.
 
 Configure it here:
 
@@ -48,16 +48,15 @@ Configure it here:
 
 Set:
 
-- `endpointUrl` to your FastAPI endpoint, for example `http://192.168.1.50:8000/analyze-frame`
+- `webSocketUrl` to your FastAPI endpoint, for example `ws://192.168.1.50:8000/ws/analyze-frame`
 - `frameIntervalMs` to control how often frames are sent
 
-Request format:
+Client message format:
 
-- `multipart/form-data`
-- file field: `frame`
-- text fields: `timestamp_us`, `width`, `height`, `model_hint`, `source`
+- JSON over WebSocket
+- fields: `frame_base64`, `timestamp_us`, `width`, `height`, `model_hint`, `source`
 
-Suggested FastAPI response shape for YOLOv8n:
+Suggested FastAPI response shape:
 
 ```json
 {
@@ -66,11 +65,16 @@ Suggested FastAPI response shape for YOLOv8n:
   "detections": [
     { "label": "chair", "confidence": 0.91, "bbox": [12, 44, 180, 260] }
   ],
-  "message": "optional human-readable summary"
+  "message": "optional human-readable summary",
+  "speech_text": "chair ahead"
 }
 ```
 
 The stream path was also tuned for lower display latency by reducing the app-side presentation buffer.
+
+A starter Python server for custom model inference lives in:
+
+- `samples/analysis_server`
 
 ## Troubleshooting
 

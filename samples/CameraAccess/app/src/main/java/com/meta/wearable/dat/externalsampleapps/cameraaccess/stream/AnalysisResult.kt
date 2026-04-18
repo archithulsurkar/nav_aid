@@ -14,6 +14,7 @@ internal data class AnalysisResult(
     val detections: List<AnalysisDetection> = emptyList(),
     val latencyMs: Double? = null,
     val message: String? = null,
+    val speechText: String? = null,
 ) {
   companion object {
     fun fromJson(json: String): AnalysisResult {
@@ -38,6 +39,7 @@ internal data class AnalysisResult(
           detections = detections,
           latencyMs = root.optDouble("latency_ms").takeUnless { it.isNaN() },
           message = root.optString("message").takeIf { it.isNotBlank() },
+          speechText = root.optString("speech_text").takeIf { it.isNotBlank() },
       )
     }
   }

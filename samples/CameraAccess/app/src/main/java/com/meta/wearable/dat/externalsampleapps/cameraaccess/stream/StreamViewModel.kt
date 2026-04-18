@@ -82,7 +82,9 @@ class StreamViewModel(
 
   // Presentation queue for buffering frames after color conversion
   private var presentationQueue: PresentationQueue? = null
-  private var analysisUploadJob: Job? = null
+  private val speechAnnouncer = SpeechAnnouncer(application.applicationContext)
+  private var analysisSocket: AnalysisWebSocketClient? = null
+  private var analysisEncodeJob: Job? = null
   private var lastAnalysisUploadElapsedMs: Long = 0L
 
   fun startStream() {
@@ -90,11 +92,12 @@ class StreamViewModel(
     stateJob?.cancel()
     errorJob?.cancel()
     sessionStateJob?.cancel()
-    analysisUploadJob?.cancel()
-    analysisUploadJob = null
+    analysisEncodeJob?.cancel()
+    analysisEncodeJob = null
     lastAnalysisUploadElapsedMs = 0L
     presentationQueue?.stop()
     presentationQueue = null
+    ensureAnalysisSocket()
 
     // Initialize presentation queue - frames are presented based on timestamp, not arrival time
     // Uses IntArray pooling for efficiency - cheaper than Bitmap.copy()
@@ -197,9 +200,11 @@ class StreamViewModel(
     errorJob = null
     sessionStateJob?.cancel()
     sessionStateJob = null
-    analysisUploadJob?.cancel()
-    analysisUploadJob = null
+    analysisEncodeJob?.cancel()
+    analysisEncodeJob = null
     lastAnalysisUploadElapsedMs = 0L
+    analysisSocket?.disconnect()
+    analysisSocket = null
     presentationQueue?.stop()
     presentationQueue = null
     _uiState.update { INITIAL_STATE }
@@ -303,32 +308,60 @@ class StreamViewModel(
       return
     }
 
-    if (analysisUploadJob?.isActive == true) {
+    val socket = analysisSocket
+    if (socket == null || !socket.isReady()) {
+      return
+    }
+
+    if (analysisEncodeJob?.isActive == true) {
       return
     }
 
     val frameSnapshot = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
     lastAnalysisUploadElapsedMs = now
-    analysisUploadJob =
+    analysisEncodeJob =
         viewModelScope.launch(Dispatchers.IO) {
           try {
-            AnalysisFrameUploader.uploadFrame(
-                endpointUrl = AnalysisConfig.endpointUrl,
-                bitmap = frameSnapshot,
-                presentationTimeUs = videoFrame.presentationTimeUs,
-                width = videoFrame.width,
-                height = videoFrame.height,
-                modelHint = AnalysisConfig.modelHint,
-                sourceName = AnalysisConfig.sourceName,
-            )
-                ?.let(::updateAnalysisStatus)
+            val accepted =
+                socket.sendFrame(
+                    bitmap = frameSnapshot,
+                    presentationTimeUs = videoFrame.presentationTimeUs,
+                    width = videoFrame.width,
+                    height = videoFrame.height,
+                    modelHint = AnalysisConfig.modelHint,
+                    sourceName = AnalysisConfig.sourceName,
+                )
+            if (!accepted) {
+              _uiState.update { it.copy(analysisStatus = "Analysis socket busy") }
+            }
           } catch (e: Exception) {
-            Log.e(TAG, "Frame upload failed", e)
-            _uiState.update { it.copy(analysisStatus = "Analysis upload failed") }
+            Log.e(TAG, "Frame send failed", e)
+            _uiState.update { it.copy(analysisStatus = "Analysis send failed") }
           } finally {
             frameSnapshot.recycle()
           }
         }
+  }
+
+  private fun ensureAnalysisSocket() {
+    if (!AnalysisConfig.isEnabled || analysisSocket != null) {
+      return
+    }
+
+    analysisSocket =
+        AnalysisWebSocketClient(
+            webSocketUrl = AnalysisConfig.webSocketUrl,
+            onResult = ::handleAnalysisResult,
+            onStatusChanged = { status ->
+              status?.let { message -> _uiState.update { it.copy(analysisStatus = message) } }
+            },
+        )
+    analysisSocket?.connect()
+  }
+
+  private fun handleAnalysisResult(result: AnalysisResult) {
+    updateAnalysisStatus(result)
+    speechAnnouncer.speakIfNeeded(result.speechText ?: result.message)
   }
 
   private fun updateAnalysisStatus(result: AnalysisResult) {
@@ -444,6 +477,7 @@ class StreamViewModel(
     stopStream()
     session?.stop()
     session = null
+    speechAnnouncer.shutdown()
   }
 
   class Factory(
