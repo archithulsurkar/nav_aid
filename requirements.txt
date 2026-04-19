@@ -1,0 +1,20 @@
+# nav_aid — Upgraded Server Requirements
+# Install with: pip install -r requirements.txt
+
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+pillow==11.3.0
+numpy==2.3.2
+opencv-python-headless>=4.9.0
+python-multipart==0.0.20
+websockets==15.0.1
+
+# YOLOv13 ultralytics fork is installed as a local editable package
+# from the yolov13/ subfolder. See README for instructions.
+# If you're using standard YOLOv8, replace with:
+# ultralytics==8.3.173
+
+# For dataset pipeline only (not needed to run the server)
+# fiftyone
+# torch
+# torchvision
