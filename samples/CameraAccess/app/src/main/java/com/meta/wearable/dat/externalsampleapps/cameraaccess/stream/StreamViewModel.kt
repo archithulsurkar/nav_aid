@@ -38,6 +38,12 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.wearables.Wearables
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -82,11 +88,14 @@ class StreamViewModel(
   private var analysisEncodeJob: Job? = null
   private var lastAnalysisUploadElapsedMs: Long = 0L
 
-  // NEW: OCR Scanner Variables
+  // OCR Scanner Variables
   private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
   private var isOcrActive = false
   private var ocrTimeoutJob: Job? = null
   private var lastOcrFrameElapsedMs: Long = 0L
+
+  // HTTP Client for NLP Server
+  private val httpClient = OkHttpClient()
 
   fun startStream() {
     videoJob?.cancel()
@@ -134,8 +143,10 @@ class StreamViewModel(
             errorJob?.cancel()
             stream?.stop()
             stream = null
+
+            // CHANGED: Boosted to VideoQuality.HIGH for clean OCR reads
             session
-              ?.addStream(StreamConfiguration(videoQuality = VideoQuality.MEDIUM, 24))
+              ?.addStream(StreamConfiguration(videoQuality = VideoQuality.HIGH, 24))
               ?.onSuccess { addedStream ->
                 stream = addedStream
                 videoJob =
@@ -184,7 +195,6 @@ class StreamViewModel(
     analysisEncodeJob?.cancel()
     analysisEncodeJob = null
 
-    // Cleanup OCR
     ocrTimeoutJob?.cancel()
     isOcrActive = false
 
@@ -200,33 +210,42 @@ class StreamViewModel(
     session = null
   }
 
-  // =====================================================================
-  // NEW: OCR TRIGGER
-  // =====================================================================
   fun triggerOcrScan() {
     if (isOcrActive) return
 
     Log.d(TAG, "Starting 2-second OCR Burst")
     isOcrActive = true
 
-    // Optional: play a subtle sound so the user knows it's scanning
-    // speechAnnouncer.speakOcrPriority("Scanning...")
-
     ocrTimeoutJob?.cancel()
     ocrTimeoutJob = viewModelScope.launch {
-      // Wait 2 seconds
       delay(2000L)
-
-      // If it's still active after 2 seconds, no readable text was found.
       if (isOcrActive) {
         isOcrActive = false
         Log.d(TAG, "OCR timeout - no text found.")
       }
     }
   }
-  // =====================================================================
 
-  fun capturePhoto() { /* implementation untouched for brevity */ }
+  fun capturePhoto() {
+    if (uiState.value.isCapturing) return
+
+    if (uiState.value.streamSessionState == StreamSessionState.STREAMING) {
+      _uiState.update { it.copy(isCapturing = true) }
+
+      viewModelScope.launch {
+        stream
+          ?.capturePhoto()
+          ?.onSuccess { photoData ->
+            handlePhotoData(photoData)
+            _uiState.update { it.copy(isCapturing = false) }
+          }
+          ?.onFailure { error, _ ->
+            Log.e(TAG, "Photo capture failed: ${error.description}")
+            _uiState.update { it.copy(isCapturing = false) }
+          }
+      }
+    }
+  }
 
   fun showShareDialog() {
     _uiState.update { it.copy(isShareDialogVisible = true) }
@@ -236,7 +255,30 @@ class StreamViewModel(
     _uiState.update { it.copy(isShareDialogVisible = false) }
   }
 
-  fun sharePhoto(bitmap: Bitmap) { /* implementation untouched for brevity */ }
+  fun sharePhoto(bitmap: Bitmap) {
+    val context = getApplication<Application>()
+    val imagesFolder = File(context.cacheDir, "images")
+    try {
+      imagesFolder.mkdirs()
+      val file = File(imagesFolder, "shared_image.png")
+      FileOutputStream(file).use { stream ->
+        bitmap.compress(Bitmap.CompressFormat.PNG, 90, stream)
+      }
+
+      val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+      val intent = Intent(Intent.ACTION_SEND)
+      intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+      intent.putExtra(Intent.EXTRA_STREAM, uri)
+      intent.type = "image/png"
+      intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+      val chooser = Intent.createChooser(intent, "Share Image")
+      chooser.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+      context.startActivity(chooser)
+    } catch (e: IOException) {
+      Log.e("StreamViewModel", "Failed to share photo", e)
+    }
+  }
 
   private fun handleVideoFrame(videoFrame: VideoFrame) {
     val bitmap =
@@ -251,30 +293,26 @@ class StreamViewModel(
         videoFrame.presentationTimeUs,
       )
 
-      // NEW: Intercept frame for OCR if active
+      // Pass the unscaled, HIGH-RES frame directly to ML Kit
       if (isOcrActive) {
         processFrameForOcr(bitmap)
       }
 
+      // Downscale and upload for YOLO
       maybeUploadFrameForAnalysis(bitmap, videoFrame)
     } else {
       Log.e(TAG, "Failed to convert YUV to bitmap")
     }
   }
 
-  // =====================================================================
-  // NEW: OCR Frame Processor
-  // =====================================================================
   private fun processFrameForOcr(bitmap: Bitmap) {
     val now = SystemClock.elapsedRealtime()
 
-    // Sample at roughly 2 frames per second to save battery & processing power
     if (now - lastOcrFrameElapsedMs < 500L) {
       return
     }
     lastOcrFrameElapsedMs = now
 
-    // Copy the bitmap so it doesn't get recycled while ML Kit is reading it
     val ocrBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
     val image = InputImage.fromBitmap(ocrBitmap, 0)
 
@@ -282,24 +320,50 @@ class StreamViewModel(
       .addOnSuccessListener { visionText ->
         val detectedText = visionText.text.trim()
 
-        // Basic filter: only read if there's an actual word/number
         if (detectedText.length >= 2 && isOcrActive) {
-          Log.d(TAG, "OCR Found: $detectedText")
-          isOcrActive = false // Stop scanning immediately
+          Log.d(TAG, "Raw OCR Found: $detectedText")
+          isOcrActive = false
           ocrTimeoutJob?.cancel()
 
-          // Read the text and mute YOLO temporarily
-          speechAnnouncer.speakOcrPriority(detectedText)
+          // Send raw text to Python server for NLP filtering
+          viewModelScope.launch {
+            val cleanedText = cleanTextViaServer(detectedText)
+            if (!cleanedText.isNullOrBlank()) {
+              Log.d(TAG, "Cleaned NLP Text: $cleanedText")
+              speechAnnouncer.speakOcrPriority(cleanedText)
+            } else {
+              Log.d(TAG, "Server filtered out the text as irrelevant.")
+            }
+          }
         }
       }
-      .addOnFailureListener { e ->
-        Log.e(TAG, "OCR Processing failed", e)
-      }
-      .addOnCompleteListener {
-        ocrBitmap.recycle() // Clean up memory
-      }
+      .addOnFailureListener { e -> Log.e(TAG, "OCR Processing failed", e) }
+      .addOnCompleteListener { ocrBitmap.recycle() }
   }
-  // =====================================================================
+
+  private suspend fun cleanTextViaServer(rawText: String): String? = withContext(Dispatchers.IO) {
+    try {
+      // UPDATE THIS URL to match where your FastAPI server is running
+      val serverUrl = AnalysisConfig.ocrUrl
+
+      val jsonBody = JSONObject().apply { put("raw_text", rawText) }.toString()
+      val request = Request.Builder()
+        .url(serverUrl)
+        .post(jsonBody.toRequestBody("application/json".toMediaType()))
+        .build()
+
+      httpClient.newCall(request).execute().use { response ->
+        if (response.isSuccessful) {
+          val responseBody = response.body?.string() ?: return@withContext null
+          val jsonResponse = JSONObject(responseBody)
+          return@withContext jsonResponse.optString("cleaned_text", "").takeIf { it.isNotBlank() }
+        }
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to clean text on server", e)
+    }
+    return@withContext null
+  }
 
   private fun maybeUploadFrameForAnalysis(bitmap: Bitmap, videoFrame: VideoFrame) {
     if (!AnalysisConfig.isEnabled) return
@@ -309,7 +373,18 @@ class StreamViewModel(
     if (socket == null || !socket.isReady()) return
     if (analysisEncodeJob?.isActive == true) return
 
-    val frameSnapshot = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
+    // CHANGED: The Downscaler. Target YOLO's preferred size of 640px max.
+    val maxDimension = 640
+    val ratio = Math.min(maxDimension.toFloat() / bitmap.width, maxDimension.toFloat() / bitmap.height)
+
+    val frameSnapshot = if (ratio < 1f) {
+      val scaledWidth = Math.round(ratio * bitmap.width)
+      val scaledHeight = Math.round(ratio * bitmap.height)
+      Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+    } else {
+      bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
+    }
+
     lastAnalysisUploadElapsedMs = now
     analysisEncodeJob =
       viewModelScope.launch(Dispatchers.IO) {
@@ -318,8 +393,8 @@ class StreamViewModel(
             socket.sendFrame(
               bitmap = frameSnapshot,
               presentationTimeUs = videoFrame.presentationTimeUs,
-              width = videoFrame.width,
-              height = videoFrame.height,
+              width = frameSnapshot.width,   // Send the new, downscaled width
+              height = frameSnapshot.height, // Send the new, downscaled height
               modelHint = AnalysisConfig.modelHint,
               sourceName = AnalysisConfig.sourceName,
             )
@@ -367,7 +442,97 @@ class StreamViewModel(
     _uiState.update { it.copy(analysisStatus = summary) }
   }
 
-  // Photo handlers removed for brevity (keep your existing decodeHeic methods exactly as they are)
+  private fun handlePhotoData(photo: PhotoData) {
+    val capturedPhoto =
+      when (photo) {
+        is PhotoData.Bitmap -> photo.bitmap
+        is PhotoData.HEIC -> {
+          val byteArray = ByteArray(photo.data.remaining())
+          photo.data.get(byteArray)
+
+          val exifInfo = getExifInfo(byteArray)
+          val transform = getTransform(exifInfo)
+          decodeHeic(byteArray, transform)
+        }
+      }
+    _uiState.update { it.copy(capturedPhoto = capturedPhoto, isShareDialogVisible = true) }
+  }
+
+  private fun decodeHeic(heicBytes: ByteArray, transform: Matrix): Bitmap {
+    val bitmap = BitmapFactory.decodeByteArray(heicBytes, 0, heicBytes.size)
+    return applyTransform(bitmap, transform)
+  }
+
+  private fun getExifInfo(heicBytes: ByteArray): ExifInterface? {
+    return try {
+      ByteArrayInputStream(heicBytes).use { inputStream -> ExifInterface(inputStream) }
+    } catch (e: IOException) {
+      Log.w(TAG, "Failed to read EXIF from HEIC", e)
+      null
+    }
+  }
+
+  private fun getTransform(exifInfo: ExifInterface?): Matrix {
+    val matrix = Matrix()
+
+    if (exifInfo == null) {
+      return matrix
+    }
+
+    when (
+      exifInfo.getAttributeInt(
+        ExifInterface.TAG_ORIENTATION,
+        ExifInterface.ORIENTATION_NORMAL,
+      )
+    ) {
+      ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> {
+        matrix.postScale(-1f, 1f)
+      }
+      ExifInterface.ORIENTATION_ROTATE_180 -> {
+        matrix.postRotate(180f)
+      }
+      ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+        matrix.postScale(1f, -1f)
+      }
+      ExifInterface.ORIENTATION_TRANSPOSE -> {
+        matrix.postRotate(90f)
+        matrix.postScale(-1f, 1f)
+      }
+      ExifInterface.ORIENTATION_ROTATE_90 -> {
+        matrix.postRotate(90f)
+      }
+      ExifInterface.ORIENTATION_TRANSVERSE -> {
+        matrix.postRotate(270f)
+        matrix.postScale(-1f, 1f)
+      }
+      ExifInterface.ORIENTATION_ROTATE_270 -> {
+        matrix.postRotate(270f)
+      }
+      ExifInterface.ORIENTATION_NORMAL,
+      ExifInterface.ORIENTATION_UNDEFINED -> {
+        // No transformation needed
+      }
+    }
+
+    return matrix
+  }
+
+  private fun applyTransform(bitmap: Bitmap, matrix: Matrix): Bitmap {
+    if (matrix.isIdentity) {
+      return bitmap
+    }
+
+    return try {
+      val transformed = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+      if (transformed != bitmap) {
+        bitmap.recycle()
+      }
+      transformed
+    } catch (e: OutOfMemoryError) {
+      Log.e(TAG, "Failed to apply transformation due to memory", e)
+      bitmap
+    }
+  }
 
   override fun onCleared() {
     super.onCleared()
@@ -375,7 +540,7 @@ class StreamViewModel(
     session?.stop()
     session = null
     speechAnnouncer.shutdown()
-    textRecognizer.close() // Clean up ML Kit
+    textRecognizer.close()
   }
 
   class Factory(
