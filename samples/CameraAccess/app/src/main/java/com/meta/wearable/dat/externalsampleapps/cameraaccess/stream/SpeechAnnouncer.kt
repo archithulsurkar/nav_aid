@@ -11,6 +11,8 @@ internal class SpeechAnnouncer(context: Context) : TextToSpeech.OnInitListener {
   private var lastSpokenText: String? = null
   private var lastSpokenElapsedMs: Long = 0L
 
+  // NEW: Suppress normal YOLO warnings while reading OCR text
+  private var suppressNormalSpeechUntilMs: Long = 0L
 
   override fun onInit(status: Int) {
     val tts = textToSpeech ?: return
@@ -20,6 +22,7 @@ internal class SpeechAnnouncer(context: Context) : TextToSpeech.OnInitListener {
     }
   }
 
+  // Normal YOLO priority
   fun speakIfNeeded(text: String?) {
     val normalized = text?.trim().orEmpty()
     if (!isInitialized || normalized.isBlank()) {
@@ -27,6 +30,12 @@ internal class SpeechAnnouncer(context: Context) : TextToSpeech.OnInitListener {
     }
 
     val now = SystemClock.elapsedRealtime()
+
+    // If OCR just spoke, block YOLO for a bit so they don't talk over each other
+    if (now < suppressNormalSpeechUntilMs) {
+      return
+    }
+
     if (now - lastSpokenElapsedMs < 2000L) {
       return
     }
@@ -34,6 +43,21 @@ internal class SpeechAnnouncer(context: Context) : TextToSpeech.OnInitListener {
     lastSpokenText = normalized
     lastSpokenElapsedMs = now
     textToSpeech?.speak(normalized, TextToSpeech.QUEUE_FLUSH, null, "analysis_speech")
+  }
+
+  // NEW: High Priority OCR Speech
+  fun speakOcrPriority(text: String) {
+    if (!isInitialized || text.isBlank()) return
+
+    val now = SystemClock.elapsedRealtime()
+    lastSpokenText = text
+    lastSpokenElapsedMs = now
+
+    // Give the user 4 seconds of peace from YOLO to digest the text read out loud
+    suppressNormalSpeechUntilMs = now + 4000L
+
+    // QUEUE_FLUSH immediately stops whatever YOLO is currently saying
+    textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ocr_speech")
   }
 
   fun shutdown() {

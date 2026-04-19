@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.asSharedFlow
 
 class WearablesViewModel(application: Application) : AndroidViewModel(application) {
   companion object {
@@ -47,6 +48,12 @@ class WearablesViewModel(application: Application) : AndroidViewModel(applicatio
   val deviceSelector: DeviceSelector by lazy { AutoDeviceSelector() }
   private var deviceSelectorJob: Job? = null
 
+  private val _ocrTriggerEvent = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+  val ocrTriggerEvent = _ocrTriggerEvent.asSharedFlow()
+
+  fun triggerOcrFromHardwareButton() {
+    _ocrTriggerEvent.tryEmit(Unit)
+  }
   private var monitoringStarted = false
   private val deviceMonitoringJobs = mutableMapOf<DeviceIdentifier, Job>()
 

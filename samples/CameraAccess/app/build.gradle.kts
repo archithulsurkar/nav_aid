@@ -76,4 +76,6 @@ dependencies {
   androidTestImplementation(libs.androidx.ui.test.junit4)
   androidTestImplementation(libs.androidx.test.uiautomator)
   androidTestImplementation(libs.androidx.test.rules)
+
+  implementation("com.google.mlkit:text-recognition:16.0.1")
 }
